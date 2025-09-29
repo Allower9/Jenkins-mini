@@ -30,7 +30,7 @@ pipeline {
 
         stage('Deploy') {
             steps {
-                sshagent (credentials: ['deploy-key-id']) {
+                sshagent (credentials: ['deploy2key']) {
                     sh """
                         ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST 'mkdir -p $DEPLOY_PATH'
                         scp target/*.jar $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/app.jar
