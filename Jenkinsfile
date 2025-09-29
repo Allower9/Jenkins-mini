@@ -6,8 +6,6 @@ pipeline {
         DEPLOY_HOST = '84.201.164.197'
         DEPLOY_PATH = '/var/www/myapp'
         JAR_NAME = 'app.jar'
-        LOG_FILE = 'app.log'
-        BACKUP_JAR = 'app_backup.jar'
     }
 
     stages {
@@ -34,44 +32,66 @@ pipeline {
             steps {
                 sshagent(credentials: ['deploy2key']) {
                     sh """
-                        set -e
+                        set -e  # Выход при любой ошибке
+                        
                         echo "Создаём директорию на сервере..."
-                        ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "mkdir -p $DEPLOY_PATH"
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 $DEPLOY_USER@$DEPLOY_HOST "mkdir -p $DEPLOY_PATH"
 
                         echo "Создаём резервную копию предыдущего JAR..."
-                        ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 $DEPLOY_USER@$DEPLOY_HOST "
                             if [ -f $DEPLOY_PATH/$JAR_NAME ]; then
-                                mv $DEPLOY_PATH/$JAR_NAME $DEPLOY_PATH/$BACKUP_JAR
+                                mv $DEPLOY_PATH/$JAR_NAME $DEPLOY_PATH/app_backup_\\$(date +%Y%m%d_%H%M%S).jar
                                 echo 'Резервная копия создана.'
                             fi
                         "
 
                         echo "Копируем новый JAR..."
-                        scp -o StrictHostKeyChecking=no target/*.jar $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/$JAR_NAME
+                        scp -o StrictHostKeyChecking=no -o ConnectTimeout=30 target/simple-app-1.0-SNAPSHOT.jar $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/$JAR_NAME
 
                         echo "Останавливаем старый процесс..."
-                        ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 $DEPLOY_USER@$DEPLOY_HOST "
                             if pgrep -f 'java -jar $DEPLOY_PATH/$JAR_NAME' > /dev/null; then
                                 pkill -f 'java -jar $DEPLOY_PATH/$JAR_NAME'
+                                sleep 5  # Даём время для graceful shutdown
                                 echo 'Старое приложение остановлено.'
+                            else
+                                echo 'Процесс не найден, продолжаем...'
                             fi
                         "
 
                         echo "Запускаем новое приложение..."
-                        ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
-                            nohup java -jar $DEPLOY_PATH/$JAR_NAME > $DEPLOY_PATH/$LOG_FILE 2>&1 &
-                            sleep 5
-                            if ! pgrep -f 'java -jar $DEPLOY_PATH/$JAR_NAME' > /dev/null; then
-                                echo 'Ошибка запуска нового приложения. Выполняем откат...'
-                                if [ -f $DEPLOY_PATH/$BACKUP_JAR ]; then
-                                    mv $DEPLOY_PATH/$BACKUP_JAR $DEPLOY_PATH/$JAR_NAME
-                                    nohup java -jar $DEPLOY_PATH/$JAR_NAME > $DEPLOY_PATH/$LOG_FILE 2>&1 &
-                                    echo 'Откат завершён.'
-                                fi
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 $DEPLOY_USER@$DEPLOY_HOST "
+                            cd $DEPLOY_PATH
+                            nohup java -jar $JAR_NAME > app.log 2>&1 &
+                            echo \$! > app.pid
+                            echo 'Приложение запущено с PID: ' \$(cat app.pid)
+                        "
+
+                        echo "Проверяем запуск..."
+                        sleep 10
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 $DEPLOY_USER@$DEPLOY_HOST "
+                            if pgrep -f 'java -jar $DEPLOY_PATH/$JAR_NAME' > /dev/null; then
+                                echo '✅ Приложение успешно запущено!'
+                                echo '=== Последние строки лога ==='
+                                tail -10 $DEPLOY_PATH/app.log
+                            else
+                                echo '❌ Приложение не запустилось'
+                                echo '=== Полный лог ошибок ==='
+                                cat $DEPLOY_PATH/app.log
                                 exit 1
                             fi
-                            echo 'Приложение успешно запущено.'
                         "
+                    """
+                }
+            }
+            post {
+                success {
+                    echo '✅ Деплой успешно завершен!'
+                }
+                failure {
+                    echo '❌ Деплой завершился с ошибкой'
+                    sh """
+                        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 $DEPLOY_USER@$DEPLOY_HOST "cat $DEPLOY_PATH/app.log" || true
                     """
                 }
             }
@@ -79,11 +99,19 @@ pipeline {
     }
 
     post {
-        success {
-            echo "Деплой завершён успешно!"
+        always {
+            echo "Pipeline завершен с статусом: ${currentBuild.result}"
         }
         failure {
-            echo "Деплой завершился с ошибкой. Проверьте лог: $DEPLOY_PATH/$LOG_FILE"
+            emailext (
+                subject: "СБОЙ СБОРКИ: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+                Проверьте сборку: ${env.BUILD_URL}
+
+                Ошибка в стадии деплоя.
+                """,
+                to: "your-email@example.com"
+            )
         }
     }
 }
