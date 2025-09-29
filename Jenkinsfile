@@ -13,11 +13,8 @@ pipeline {
     stages {
         stage('Build') {
             steps {
-                echo "Проверка версий Java и Maven..."
                 sh 'java -version'
                 sh 'mvn -version'
-
-                echo "Сборка проекта..."
                 sh 'mvn clean package -DskipTests'
             }
         }
@@ -41,7 +38,7 @@ pipeline {
                         echo "Создаём директорию на сервере..."
                         ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "mkdir -p $DEPLOY_PATH"
 
-                        echo "Создаём резервную копию предыдущего JAR (если есть)..."
+                        echo "Создаём резервную копию предыдущего JAR..."
                         ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
                             if [ -f $DEPLOY_PATH/$JAR_NAME ]; then
                                 mv $DEPLOY_PATH/$JAR_NAME $DEPLOY_PATH/$BACKUP_JAR
@@ -49,14 +46,14 @@ pipeline {
                             fi
                         "
 
-                        echo "Копируем новый JAR на сервер..."
+                        echo "Копируем новый JAR..."
                         scp -o StrictHostKeyChecking=no target/*.jar $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/$JAR_NAME
 
-                        echo "Останавливаем старое приложение (если запущено)..."
+                        echo "Останавливаем старый процесс..."
                         ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
                             if pgrep -f 'java -jar $DEPLOY_PATH/$JAR_NAME' > /dev/null; then
                                 pkill -f 'java -jar $DEPLOY_PATH/$JAR_NAME'
-                                echo 'Старое приложение завершено.'
+                                echo 'Старое приложение остановлено.'
                             fi
                         "
 
@@ -64,17 +61,16 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST "
                             nohup java -jar $DEPLOY_PATH/$JAR_NAME > $DEPLOY_PATH/$LOG_FILE 2>&1 &
                             sleep 5
-                            if pgrep -f 'java -jar $DEPLOY_PATH/$JAR_NAME' > /dev/null; then
-                                echo 'Приложение успешно запущено.'
-                            else
-                                echo 'Ошибка запуска приложения, откатываем на резервную версию...'
+                            if ! pgrep -f 'java -jar $DEPLOY_PATH/$JAR_NAME' > /dev/null; then
+                                echo 'Ошибка запуска нового приложения. Выполняем откат...'
                                 if [ -f $DEPLOY_PATH/$BACKUP_JAR ]; then
                                     mv $DEPLOY_PATH/$BACKUP_JAR $DEPLOY_PATH/$JAR_NAME
                                     nohup java -jar $DEPLOY_PATH/$JAR_NAME > $DEPLOY_PATH/$LOG_FILE 2>&1 &
-                                    echo 'Откат выполнен.'
+                                    echo 'Откат завершён.'
                                 fi
                                 exit 1
                             fi
+                            echo 'Приложение успешно запущено.'
                         "
                     """
                 }
@@ -87,7 +83,7 @@ pipeline {
             echo "Деплой завершён успешно!"
         }
         failure {
-            echo "Деплой завершился с ошибкой. Проверьте лог на сервере: $DEPLOY_PATH/$LOG_FILE"
+            echo "Деплой завершился с ошибкой. Проверьте лог: $DEPLOY_PATH/$LOG_FILE"
         }
     }
 }
