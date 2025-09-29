@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DEPLOY_USER = 'user1'
-        DEPLOY_HOST = '127.0.0.1'
+        DEPLOY_HOST = '84.201.164.197'
         DEPLOY_PATH = '/var/www/myapp'
     }
 
