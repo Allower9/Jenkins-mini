@@ -1,6 +1,11 @@
 pipeline {
     agent any
 
+    tools {
+        jdk 'JDK 17'      // имя JDK, настроенное в Jenkins
+        maven 'Maven 3.9' // имя Maven, настроенное в Jenkins
+    }
+
     environment {
         DEPLOY_USER = 'user1'
         DEPLOY_HOST = '127.0.0.1'
