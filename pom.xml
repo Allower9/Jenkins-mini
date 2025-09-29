@@ -17,6 +17,7 @@
     </properties>
 
     <dependencies>
+        <!-- JUnit 5 -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -45,12 +46,13 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.2.2</version>
+                <version>3.3.0</version>
                 <configuration>
                     <archive>
                         <manifest>
                             <addClasspath>true</addClasspath>
-                            <mainClass>hello.App</mainClass> <!-- <-- замени на свой main класс -->
+                            <classpathPrefix>lib/</classpathPrefix>
+                            <mainClass>hello.App</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
