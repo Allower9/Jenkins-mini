@@ -41,7 +41,7 @@ pipeline {
 
         stage('Deploy') {
             steps {
-                sshagent(credentials: ['user1']) {
+                sshagent(credentials: ['deploy_user1']) {
                     sh '''
                     set +e
 
